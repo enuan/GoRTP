@@ -19,6 +19,7 @@
 package rtp
 
 import (
+    "bytes"
     "fmt"
     //    "net"
     "testing"
@@ -168,4 +169,44 @@ func rtcpPacketBasic(t *testing.T) {
 func TestRtcpPacket(t *testing.T) {
     parseFlags()
     rtcpPacketBasic(t)
+}
+
+func TestNewCtrlPacketSetPayload(t *testing.T) {
+    // SetPayload with content smaller than the previous one shrinks InUse
+    rp := NewCtrlPacket()
+    if rp == nil {
+        t.Fatal("NewCtrlPacket returned nil")
+    }
+    if !rp.SetPayload(sdes_1) {
+        t.Fatal("SetPayload of valid content failed")
+    }
+    if rp.InUse() != len(sdes_1) {
+        t.Fatalf("InUse = %d, want %d", rp.InUse(), len(sdes_1))
+    }
+    if !bytes.Equal(rp.Buffer()[:rp.InUse()], sdes_1) {
+        t.Fatal("packet buffer content mismatch after SetPayload")
+    }
+
+    // SetPayload with bigger content grows InUse
+    if !rp.SetPayload(sdes_2) {
+        t.Fatal("SetPayload of valid content failed")
+    }
+    if rp.InUse() != len(sdes_2) {
+        t.Fatalf("InUse = %d, want %d", rp.InUse(), len(sdes_2))
+    }
+    if !bytes.Equal(rp.Buffer()[:rp.InUse()], sdes_2) {
+        t.Fatal("packet buffer content mismatch after SetPayload")
+    }
+
+    // SetPayload with content exceeding the buffer capacity leaves the
+    // packet unchanged and reports failure
+    big := make([]byte, defaultBufferSize+1)
+    if rp.SetPayload(big) {
+        t.Fatal("expected SetPayload overflow to fail")
+    }
+    if rp.InUse() != len(sdes_2) {
+        t.Fatalf("InUse changed after overflow: %d, want %d", rp.InUse(), len(sdes_2))
+    }
+
+    rp.FreePacket()
 }

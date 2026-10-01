@@ -143,6 +143,12 @@ func newDataPacket() (rp *DataPacket) {
 	return
 }
 
+// NewDataPacket returns an initialized DataPacket for use by transport
+// middleware and tests. The packet is taken from the free list if available.
+func NewDataPacket() (rp *DataPacket) {
+	return newDataPacket()
+}
+
 // FreePacket returns the packet to the free RTP list.
 // A packet marked as free is ignored, thus calling FreePacket multiple times for the same
 // packet is possible.
@@ -527,6 +533,29 @@ func newCtrlPacket() (rp *CtrlPacket, offset int) {
 	rp.inUse = rtcpHeaderLength
 	offset = rtcpHeaderLength
 	return
+}
+
+// NewCtrlPacket returns an initialized CtrlPacket for use by transport
+// middleware and tests. The packet is taken from the free list if available.
+func NewCtrlPacket() (rp *CtrlPacket) {
+	rp, _ = newCtrlPacket()
+	return
+}
+
+// SetPayload replaces the whole RTCP compound content of the packet with data,
+// adjusting the number of valid bytes (InUse) accordingly. It reports whether
+// data fits into the packet buffer; on overflow the packet content is left
+// unchanged.
+//
+// Transport middleware, e.g. SRTP, uses it to rewrite the packet buffer in
+// place before forwarding it to the lower transport or to the session.
+func (rp *CtrlPacket) SetPayload(data []byte) bool {
+	if len(data) > cap(rp.buffer) {
+		return false
+	}
+	copy(rp.buffer, data)
+	rp.inUse = len(data)
+	return true
 }
 
 // addHeaderCtrl adds a new fixed RTCP header field into the compound, initializes, advances inUse to point after new fixed header.
