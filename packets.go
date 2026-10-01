@@ -149,6 +149,22 @@ func NewDataPacket() (rp *DataPacket) {
 	return newDataPacket()
 }
 
+// SetRaw replaces the whole content of the packet with data, adjusting the
+// number of valid bytes (InUse) accordingly. It reports whether data fits
+// into the packet buffer; on overflow the packet content is left unchanged.
+//
+// Transport middleware, e.g. SRTP, uses it to rewrite received packets in
+// place: unlike SetPayload it does not interpret the RTP header, so it is
+// safe on any received packet, padded or not.
+func (rp *DataPacket) SetRaw(data []byte) bool {
+	if len(data) > cap(rp.buffer) {
+		return false
+	}
+	copy(rp.buffer, data)
+	rp.inUse = len(data)
+	return true
+}
+
 // FreePacket returns the packet to the free RTP list.
 // A packet marked as free is ignored, thus calling FreePacket multiple times for the same
 // packet is possible.
