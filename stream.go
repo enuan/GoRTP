@@ -861,6 +861,12 @@ func (si *SsrcStream) reinitSeq(seq uint16) {
 	si.statistics.packetCount = 0
 	si.statistics.expectedPrior = 0
 	si.statistics.receivedPrior = 0
+	// The remote source restarted: its RTP timestamps are unrelated to the
+	// previous ones, so the interarrival jitter estimate and the transit time
+	// baseline of the previous epoch are meaningless. Keeping them makes the
+	// first packet after the restart produce a huge transit time delta.
+	si.statistics.jitter = 0
+	si.statistics.lastPacketTransitTime = 0
 }
 
 func (si *SsrcStream) initStats() {

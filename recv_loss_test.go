@@ -163,3 +163,51 @@ func TestResolveRecvReportClampsCumulativeLost(t *testing.T) {
 		}
 	})
 }
+
+// TestReinitSeqResetsJitter checks that a confirmed sequence number jump (the
+// remote source restarted) also resets the jitter estimate and the transit
+// time baseline: the timestamps of the new epoch are unrelated to the previous
+// ones, so keeping the old state produces a huge jitter spike.
+func TestReinitSeqResetsJitter(t *testing.T) {
+	si := newTestInputStream()
+
+	feed := func(seq uint16, ts uint32) {
+		rp := newDataPacket()
+		rp.SetSsrc(si.ssrc)
+		rp.SetSequence(seq)
+		rp.SetTimestamp(ts)
+		rp.SetPayloadType(0)
+		rp.SetPayload([]byte{0x01, 0x02})
+
+		si.recordReceptionData(rp, &Session{}, time.Now().UnixNano(), func(int) *PayloadFormat {
+			return PayloadFormatMap[0]
+		})
+		rp.FreePacket()
+	}
+
+	// Timestamps advance faster than the arrival time, so the transit time
+	// changes at every packet and the jitter estimate becomes non zero.
+	for i := 0; i < 100; i++ {
+		feed(uint16(1000+i), uint32(i)*160*50)
+	}
+	if si.statistics.jitter == 0 {
+		t.Fatal("precondition failed: jitter is zero before the restart")
+	}
+
+	// The source restarts with unrelated sequence number and timestamp.
+	feed(60000, 0x70000000)
+	feed(60001, 0x70000000+160)
+
+	if got := si.statistics.jitter; got != 0 {
+		t.Fatalf("jitter = %d, want 0 after sequence re-sync", got)
+	}
+	if got := si.statistics.packetCount; got != 1 {
+		t.Fatalf("packetCount = %d, want 1 after sequence re-sync", got)
+	}
+
+	// The next packet must not produce a delta against the old epoch.
+	feed(60002, 0x70000000+320)
+	if got := si.statistics.jitter >> 4; got > 1000 {
+		t.Fatalf("jitter = %d after restart, spike from the old transit time baseline", got)
+	}
+}
