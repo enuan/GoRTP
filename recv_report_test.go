@@ -21,8 +21,8 @@ import (
 )
 
 // buildRecvReport builds a report block as it is carried by an RTCP receiver
-// report. lost is the raw 24 bit cumulative packets lost field.
-func buildRecvReport(ssrc, lost, highestSeq uint32) recvReport {
+// report. lost is the cumulative number of packets lost (24 bit signed).
+func buildRecvReport(ssrc uint32, lost int32, highestSeq uint32) recvReport {
 	rr := make(recvReport, reportBlockLen)
 	rr.setSsrc(ssrc)
 	rr.setPacketsLost(lost)
@@ -38,7 +38,7 @@ func TestReadRecvReportPacketCount(t *testing.T) {
 
 	cases := []struct {
 		name       string
-		lost       uint32
+		lost       int32
 		highestSeq uint32
 		want       uint32
 	}{
@@ -68,7 +68,7 @@ func TestReadRecvReportPacketCount(t *testing.T) {
 			// A negative loss (-1, duplicates): the receiver got one packet
 			// more than expected.
 			name:       "negative loss",
-			lost:       0xffffff,
+			lost:       -1,
 			highestSeq: uint32(startSeqNo) + 999,
 			want:       1001,
 		},

@@ -1053,9 +1053,12 @@ type StreamStats struct {
 	// receiver
 	PacketsReceived uint64
 	BytesReceived   uint64
-	PacketsLost     uint64
-	Jitter          uint32
-	Rtt             int64
+	// PacketsLost is the cumulative number of packets lost as reported by the
+	// remote receiver (output streams) or computed for the received stream
+	// (input streams). It is signed: negative values mean duplicated packets.
+	PacketsLost int64
+	Jitter      uint32
+	Rtt         int64
 }
 
 type SessionStats struct {
@@ -1098,7 +1101,7 @@ func buildStreamStats(str *SsrcStream) StreamStats {
 		BytesSent:       uint64(str.SenderOctectCnt),
 		PacketsReceived: uint64(str.statistics.packetCount),
 		BytesReceived:   uint64(str.statistics.octetCount),
-		PacketsLost:     uint64(str.PacketsLost),
+		PacketsLost:     int64(str.PacketsLost),
 		Jitter:          str.Jitter,
 		Rtt:             str.rtt,
 	}

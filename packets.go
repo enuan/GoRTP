@@ -750,19 +750,19 @@ func (rr recvReport) setSsrc(ssrc uint32) {
 
 // packetsLost returns the receiver report packets lost data in host order.
 //
-// The value is the raw 24 bit field as it appears on the wire: RFC 3550 defines
-// it as a signed integer (negative values mean duplicated packets), callers
-// that need the signed value must sign-extend it (see readRecvReport).
-func (rr recvReport) packetsLost() uint32 {
+// The field is 24 bit wide and RFC 3550 defines it as a signed integer:
+// negative values mean the receiver got duplicated packets.
+func (rr recvReport) packetsLost() int32 {
 	lost := binary.BigEndian.Uint32(rr[4:])
-	return lost & 0xffffff
+	return int32(lost<<8) >> 8
 }
 
-// setPacketsLost takes a 32 unsigned packet lost number in host order and sets lower 24 bits in network order in RR.
-func (rr recvReport) setPacketsLost(pktLost uint32) {
+// setPacketsLost takes the cumulative number of packets lost in host order and
+// sets the lower 24 bits in network order in RR. Callers must clamp the value to
+// the 24 bit signed range (see maxCumulativeLost/minCumulativeLost).
+func (rr recvReport) setPacketsLost(pktLost int32) {
 	fracSave := rr[4]
-	pktLost &= 0xffffff
-	binary.BigEndian.PutUint32(rr[4:], pktLost)
+	binary.BigEndian.PutUint32(rr[4:], uint32(pktLost)&0xffffff)
 	rr[4] = fracSave
 }
 

@@ -25,6 +25,11 @@ import (
 )
 
 const (
+	// maxCumulativeLost/minCumulativeLost bound the 24 bit signed cumulative
+	// number of packets lost carried by a receiver report (RFC 3550 A.3).
+	maxCumulativeLost = 0x7fffff
+	minCumulativeLost = -0x800000
+
 	maxDropout    = 3000
 	minSequential = 0
 	maxMisorder   = 100
@@ -91,7 +96,11 @@ type SenderInfoData struct {
 
 type RecvReportData struct {
 	FracLost uint8
-	PacketsLost,
+	// PacketsLost is the cumulative number of packets lost. For output streams
+	// it is the value reported by the remote receiver, for input streams the
+	// value computed by resolveRecvReport. It is a 24 bit signed value
+	// (RFC 3550): negative means the receiver got duplicated packets.
+	PacketsLost int32
 	HighestSeqNo,
 	Jitter,
 	LastSr,
@@ -349,10 +358,7 @@ func (so *SsrcStream) readRecvReport(report recvReport) {
 	if expected < 0 {
 		expected = 0
 	}
-	// The cumulative number of packets lost is a 24 bit signed field: a
-	// negative value means the receiver got duplicated packets.
-	lost := int64(int32(so.PacketsLost<<8) >> 8)
-	received := expected - lost
+	received := expected - int64(so.PacketsLost)
 	if received < 0 {
 		received = 0
 	}
@@ -609,11 +615,11 @@ func (si *SsrcStream) recordReceptionData(rp *DataPacket, rs *Session, recvTime 
 			// TODO: check usage of baseSeqNum
 			if uint32(seq) == si.statistics.badSeqNum {
 				// Here we saw two sequential packets - assume other side restarted, so just re-sync
-				// and treat this packet as first packet
-				si.statistics.maxSeqNum = seq
-				si.statistics.baseSeqNum = seq
-				si.statistics.seqNumAccum = 0
-				si.statistics.badSeqNum = seqNumMod + 1
+				// and treat this packet as first packet. RFC 3550 A.1 (init_seq) resets
+				// the counters of the previous epoch as well: without the reset the
+				// reported loss is computed against a stale base sequence number and
+				// becomes a huge unsigned value.
+				si.reinitSeq(seq)
 			} else {
 				si.statistics.badSeqNum = uint32((seq + 1) & (seqNumMod - 1))
 				// This additional check avoids that the very first packet from a source be discarded.
@@ -740,14 +746,25 @@ func (si *SsrcStream) checkSsrcIncomingCtrl(existingStream bool, rs *Session, fr
 
 func (si *SsrcStream) resolveRecvReport() {
 	extMaxSeq := si.statistics.seqNumAccum + uint32(si.statistics.maxSeqNum)
-	expected := extMaxSeq - uint32(si.statistics.baseSeqNum) + 1
-	lost := expected - si.statistics.packetCount
+	expected := int64(extMaxSeq) - int64(si.statistics.baseSeqNum) + 1
+	if expected < 0 {
+		expected = 0
+	}
+	// The cumulative number of packets lost is a 24 bit signed value: it is
+	// negative when the source sends duplicated packets, so compute it signed
+	// and clamp it to the range RFC 3550 A.3 prescribes instead of wrapping
+	// around a uint32.
+	lost := expected - int64(si.statistics.packetCount)
 	if si.statistics.packetCount == 0 {
 		lost = 0
+	} else if lost > maxCumulativeLost {
+		lost = maxCumulativeLost
+	} else if lost < minCumulativeLost {
+		lost = minCumulativeLost
 	}
-	expectedDelta := expected - si.statistics.expectedPrior
-	si.statistics.expectedPrior = expected
-	receivedDelta := si.statistics.packetCount - si.statistics.receivedPrior
+	expectedDelta := expected - int64(si.statistics.expectedPrior)
+	si.statistics.expectedPrior = uint32(expected)
+	receivedDelta := int64(si.statistics.packetCount) - int64(si.statistics.receivedPrior)
 	si.statistics.receivedPrior = si.statistics.packetCount
 	lostDelta := expectedDelta - receivedDelta
 
@@ -764,7 +781,7 @@ func (si *SsrcStream) resolveRecvReport() {
 		dlsr = uint32(time.Duration(time.Now().UnixNano()-si.statistics.lastRtcpSrTime).Seconds() * 65536)
 	}
 
-	si.PacketsLost = lost
+	si.PacketsLost = int32(lost)
 	si.FracLost = fracLost
 	si.HighestSeqNo = extMaxSeq
 	si.Jitter = si.statistics.jitter >> 4
@@ -832,6 +849,20 @@ func (si *SsrcStream) hello() bool {
 }
 
 // initStats initializes all RTCP statistic counters and other relevant data.
+// reinitSeq resets the sequence number tracking of this source to seq, see
+// RFC 3550 A.1 (init_seq). It is used when a large sequence number jump is
+// confirmed, i.e. the remote source restarted its sequence numbering. The
+// caller must hold the stream lock.
+func (si *SsrcStream) reinitSeq(seq uint16) {
+	si.statistics.baseSeqNum = seq
+	si.statistics.maxSeqNum = seq
+	si.statistics.badSeqNum = seqNumMod + 1
+	si.statistics.seqNumAccum = 0
+	si.statistics.packetCount = 0
+	si.statistics.expectedPrior = 0
+	si.statistics.receivedPrior = 0
+}
+
 func (si *SsrcStream) initStats() {
 	si.Lock()
 
