@@ -748,7 +748,11 @@ func (rr recvReport) setSsrc(ssrc uint32) {
 	binary.BigEndian.PutUint32(rr[0:], ssrc)
 }
 
-// packetsLost returns the receiver report packets lost data as 32bit unsigned in host order.
+// packetsLost returns the receiver report packets lost data in host order.
+//
+// The value is the raw 24 bit field as it appears on the wire: RFC 3550 defines
+// it as a signed integer (negative values mean duplicated packets), callers
+// that need the signed value must sign-extend it (see readRecvReport).
 func (rr recvReport) packetsLost() uint32 {
 	lost := binary.BigEndian.Uint32(rr[4:])
 	return lost & 0xffffff

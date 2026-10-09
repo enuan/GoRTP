@@ -340,10 +340,23 @@ func (so *SsrcStream) readRecvReport(report recvReport) {
 	so.LastSr = report.lsr()
 	so.Dlsr = report.dlsr()
 
-	cycles := uint64(so.HighestSeqNo & 0xFFFF0000)
-	nr := uint64(so.HighestSeqNo & 0x0000FFFF)
-	highest := cycles*0xFFFF + nr
-	so.statistics.packetCount = uint32(highest - uint64(so.PacketsLost) - uint64(so.startSeqNo) + 1)
+	// HighestSeqNo is already the 32 bit extended highest sequence number
+	// carried by the report block (RFC 3550, section 6.4.1): rebuilding it
+	// from its two halves (cycles*0xFFFF + nr) produced a wrong value as
+	// soon as the sequence number wrapped, and the subtraction below
+	// underflowed to a huge uint32.
+	expected := int64(so.HighestSeqNo) - int64(so.startSeqNo) + 1
+	if expected < 0 {
+		expected = 0
+	}
+	// The cumulative number of packets lost is a 24 bit signed field: a
+	// negative value means the receiver got duplicated packets.
+	lost := int64(int32(so.PacketsLost<<8) >> 8)
+	received := expected - lost
+	if received < 0 {
+		received = 0
+	}
+	so.statistics.packetCount = uint32(received)
 
 	if so.LastSr > 0 {
 		sec, frac := toNtpStamp(time.Now().UnixNano())
