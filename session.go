@@ -1077,8 +1077,17 @@ type StreamStats struct {
 	// remote receiver (output streams) or computed for the received stream
 	// (input streams). It is signed: negative values mean duplicated packets.
 	PacketsLost int64
-	Jitter      uint32
-	Rtt         int64
+	// PacketsReceivedAtReport is the number of packets received when the loss
+	// above was computed, i.e. when the last receiver report of an input stream
+	// was built. PacketsReceived keeps advancing with every packet, so the two
+	// counters describe the same interval only at a report boundary: this is the
+	// one to use to measure the loss of a stream over a window.
+	//
+	// For an output stream the two counters come from the same report of the
+	// peer and are always consistent, so this is equal to PacketsReceived.
+	PacketsReceivedAtReport uint64
+	Jitter                  uint32
+	Rtt                     int64
 	// LastPeerReport is the time (unix nanoseconds) the last RTCP report
 	// about this stream was received from the peer: for output streams the
 	// receiver report carrying the values above, for input streams the
@@ -1131,6 +1140,13 @@ func buildStreamStats(str *SsrcStream) StreamStats {
 		Jitter:          str.Jitter,
 		Rtt:             str.rtt,
 		LastPeerReport:  str.lastPeerReportTime,
+	}
+	if str.streamType == InputStream {
+		// the loss of an input stream is computed when we build our report:
+		// receivedPrior is the number of packets received at that moment
+		stats.PacketsReceivedAtReport = uint64(str.statistics.receivedPrior)
+	} else {
+		stats.PacketsReceivedAtReport = stats.PacketsReceived
 	}
 	str.RUnlock()
 	return stats
