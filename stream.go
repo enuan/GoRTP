@@ -101,6 +101,12 @@ type RecvReportData struct {
 	// value computed by resolveRecvReport. It is a 24 bit signed value
 	// (RFC 3550): negative means the receiver got duplicated packets.
 	PacketsLost int32
+	// ReportCount is the number of reports this stream has seen: the receiver
+	// reports we built for an input stream, the ones the peer sent about an
+	// output stream. It is monotonic, so it identifies the report the values
+	// above belong to: two reports can carry the same numbers (a call on hold,
+	// say) and they are still two measurements.
+	ReportCount uint64
 	HighestSeqNo,
 	Jitter,
 	LastSr,
@@ -354,6 +360,7 @@ func (so *SsrcStream) readRecvReport(report recvReport) {
 	so.Jitter = report.jitter()
 	so.LastSr = report.lsr()
 	so.Dlsr = report.dlsr()
+	so.ReportCount++
 
 	// HighestSeqNo is already the 32 bit extended highest sequence number
 	// carried by the report block (RFC 3550, section 6.4.1): rebuilding it
@@ -787,6 +794,7 @@ func (si *SsrcStream) resolveRecvReport() {
 		dlsr = uint32(time.Duration(time.Now().UnixNano()-si.statistics.lastRtcpSrTime).Seconds() * 65536)
 	}
 
+	si.ReportCount++
 	si.PacketsLost = int32(lost)
 	si.FracLost = fracLost
 	si.HighestSeqNo = extMaxSeq

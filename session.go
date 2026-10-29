@@ -1077,6 +1077,11 @@ type StreamStats struct {
 	// remote receiver (output streams) or computed for the received stream
 	// (input streams). It is signed: negative values mean duplicated packets.
 	PacketsLost int64
+	// ReportCount is the number of reports this stream has seen: the ones we
+	// built for an input stream, the ones the peer sent about an output stream.
+	// It is monotonic and identifies the report the counters above belong to:
+	// two reports can carry the same numbers and still be two measurements.
+	ReportCount uint64
 	// PacketsReceivedAtReport is the number of packets received when the loss
 	// above was computed, i.e. when the last receiver report of an input stream
 	// was built. PacketsReceived keeps advancing with every packet, so the two
@@ -1137,6 +1142,7 @@ func buildStreamStats(str *SsrcStream) StreamStats {
 		PacketsReceived: uint64(str.statistics.packetCount),
 		BytesReceived:   uint64(str.statistics.octetCount),
 		PacketsLost:     int64(str.PacketsLost),
+		ReportCount:     str.ReportCount,
 		Jitter:          str.Jitter,
 		Rtt:             str.rtt,
 		LastPeerReport:  str.lastPeerReportTime,
