@@ -808,8 +808,11 @@ func (si *SsrcStream) resolveRecvReport() {
 func (si *SsrcStream) makeRecvReport(rp *CtrlPacket) (newOffset int) {
 	report, newOffset := rp.newRecvReport()
 
-	si.RLock()
-	defer si.RUnlock()
+	// the report is computed and read under the exclusive lock: the statistics
+	// it writes are the ones the applications read through GetStats, together
+	// with the count of the reports
+	si.Lock()
+	defer si.Unlock()
 
 	si.resolveRecvReport()
 

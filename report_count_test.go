@@ -56,3 +56,45 @@ func TestStreamStatsReportCount(t *testing.T) {
 		t.Fatalf("outbound report count = %d, want %d", got, first+1)
 	}
 }
+
+// The report is computed and read while holding the stream: an application that
+// reads the statistics sees the values and the count of the same report.
+func TestStreamStatsReportCountLocking(t *testing.T) {
+	addr, _ := net.ResolveIPAddr("ip", "127.0.0.1")
+	tp, err := NewTransportUDP(addr, 5353, "")
+	if err != nil {
+		t.Fatalf("create transport: %v", err)
+	}
+
+	rs := NewSession(tp, tp)
+	rs.rtcpServiceActive = true
+
+	strIdx, herr := rs.NewSsrcStreamOut(&Address{IpAddr: addr.IP, DataPort: 5353, CtrlPort: 5354}, 0x01020304, 0x4712)
+	if herr != "" {
+		t.Fatalf("create output stream: %s", herr)
+	}
+	strOut := rs.SsrcStreamOutForIndex(strIdx)
+	strOut.SetPayloadType(0)
+
+	si := newSsrcStreamIn(&Address{IpAddr: addr.IP, DataPort: 5012, CtrlPort: 5013}, 0x0d0c0b0a)
+	rs.streamsMapMutex.Lock()
+	rs.streamsIn[1] = si
+	rs.streamsMapMutex.Unlock()
+
+	feedRecvPackets(si, 1, 2, 3)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 100; i++ {
+			si.Lock()
+			si.dataAfterLastReport = true
+			si.Unlock()
+			rs.buildRtcpPkt(strOut, 31)
+		}
+	}()
+	for i := 0; i < 100; i++ {
+		rs.GetStats()
+	}
+	<-done
+}
