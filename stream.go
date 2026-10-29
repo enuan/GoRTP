@@ -881,6 +881,7 @@ func (si *SsrcStream) initStats() {
 	si.statistics.lastPacketTime = 0
 	si.statistics.lastRtcpPacketTime = 0
 	si.statistics.lastRtcpSrTime = 0
+	si.lastPeerReportTime = 0
 
 	si.statistics.packetCount = 0
 	si.statistics.octetCount = 0
