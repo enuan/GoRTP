@@ -132,6 +132,14 @@ const (
 	StreamCollisionLoopCtrl          // Detected a collision or loop processing an RTCP packet
 )
 
+// RtcpTxReport is not a packet type received on the wire: it signals that the
+// stack built the receiver report block of the given input stream, i.e. that
+// the reception statistics (packets lost, jitter, highest sequence number,
+// LSR/DLSR) of that stream have just been refreshed. An application that wants
+// to sample them samples on this event instead of polling, so that the sample
+// belongs to the reporting interval the peer will see.
+const RtcpTxReport = 208
+
 // The receiver transports return these vaules via the TransportEnd channel when they are
 // done stopping the data or control receivers.
 const (
@@ -898,14 +906,7 @@ loop:
 		}
 	}
 
-	rs.RLock()
-	ctrlCh := rs.ctrlEventChan
-	rs.RUnlock()
-
-	select {
-	case ctrlCh <- ctrlEvArr: // send control event
-	default:
-	}
+	rs.sendCtrlEvents(ctrlEvArr)
 	// re-compute average packet size. Don't re-compute RTCP interval time, will be done on next RTCP report
 	// interval. The timing is not affected that much by delaying the interval re-computation.
 	size := float64(rp.InUse() + 20 + 8) // TODO: get real values for IP and transport from transport module
@@ -917,6 +918,25 @@ loop:
 	ctrlEvArr = nil
 
 	return true
+}
+
+// sendCtrlEvents delivers a batch of control events to the application without
+// blocking: the channel is a notification mechanism, not a queue, so a full
+// channel drops the batch (the application reads the stream state, not the
+// event itself).
+func (rs *Session) sendCtrlEvents(evts []*CtrlEvent) {
+	if len(evts) == 0 {
+		return
+	}
+
+	rs.RLock()
+	ch := rs.ctrlEventChan
+	rs.RUnlock()
+
+	select {
+	case ch <- evts:
+	default:
+	}
 }
 
 // CloseRecv implements the rtp.TransportRecv CloseRecv method.

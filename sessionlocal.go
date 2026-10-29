@@ -352,10 +352,13 @@ func (rs *Session) buildRtcpPkt(strOut *SsrcStream, inStreamCnt int) (rc *CtrlPa
 	if inStreamCnt >= 31 {
 		inStreamCnt = 31
 	}
-	var rrCnt int
+	var (
+		rrCnt  int
+		txEvts []*CtrlEvent
+	)
 	if inStreamCnt > 0 {
 		rs.streamsMapMutex.RLock()
-		for _, strIn := range rs.streamsIn {
+		for idx, strIn := range rs.streamsIn {
 			strIn.RLock()
 			if strIn.dataAfterLastReport {
 				strIn.RUnlock()
@@ -364,6 +367,11 @@ func (rs *Session) buildRtcpPkt(strOut *SsrcStream, inStreamCnt int) (rc *CtrlPa
 				strIn.dataAfterLastReport = false
 				strIn.Unlock()
 				strIn.makeRecvReport(rc)
+
+				// The reception statistics of this stream were just
+				// refreshed: tell the application, so that it can sample them
+				// here rather than at an unrelated moment.
+				txEvts = append(txEvts, newCrtlEvent(RtcpTxReport, strIn.Ssrc(), uint32(idx)))
 
 				pktLen += reportBlockLen / 4 // increment SR/RR to include length of this recv report block
 				rrCnt++
@@ -376,6 +384,7 @@ func (rs *Session) buildRtcpPkt(strOut *SsrcStream, inStreamCnt int) (rc *CtrlPa
 		}
 		rs.streamsMapMutex.RUnlock()
 	}
+	rs.sendCtrlEvents(txEvts)
 	rc.SetLength(0, uint16(pktLen)) // length of first RTCP packet in compound: fixed header, 0 or 1 SR, n*RR
 	rc.SetCount(0, rrCnt)
 
