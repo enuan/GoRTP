@@ -134,8 +134,13 @@ type SsrcStream struct {
 	sequenceNumber uint16
 	startSeqNo     uint16
 	ssrc           uint32
-	payloadType    byte
-	sender         bool // true if this source (ouput or input) was identified as active sender
+	// lastPeerReportTime is the reception time (ns) of the last RTCP report
+	// received for this stream: a receiver report for an output stream (the
+	// values the peer measured on what we send) or a sender report for an
+	// input stream. Zero means that the peer never reported.
+	lastPeerReportTime int64
+	payloadType        byte
+	sender             bool // true if this source (ouput or input) was identified as active sender
 
 	// For input streams: true if RTP packet seen after last RR
 	dataAfterLastReport bool
@@ -342,6 +347,7 @@ func (str *SsrcStream) newSequence() {
 // readRecvReport reads data from receive report and fills it into output stream RecvReportData structure
 func (so *SsrcStream) readRecvReport(report recvReport) {
 	so.Lock()
+	so.lastPeerReportTime = time.Now().UnixNano()
 	so.FracLost = report.packetsLostFrac()
 	so.PacketsLost = report.packetsLost()
 	so.HighestSeqNo = report.highestSeq()

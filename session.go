@@ -1059,6 +1059,12 @@ type StreamStats struct {
 	PacketsLost int64
 	Jitter      uint32
 	Rtt         int64
+	// LastPeerReport is the time (unix nanoseconds) the last RTCP report
+	// about this stream was received from the peer: for output streams the
+	// receiver report carrying the values above, for input streams the
+	// sender report. Zero means that the peer never reported, so the values
+	// of an output stream are unknown rather than good.
+	LastPeerReport int64
 }
 
 type SessionStats struct {
@@ -1104,6 +1110,7 @@ func buildStreamStats(str *SsrcStream) StreamStats {
 		PacketsLost:     int64(str.PacketsLost),
 		Jitter:          str.Jitter,
 		Rtt:             str.rtt,
+		LastPeerReport:  str.lastPeerReportTime,
 	}
 	str.RUnlock()
 	return stats

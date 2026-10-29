@@ -491,7 +491,9 @@ func (rs *Session) rtcpSenderCheck(rp *CtrlPacket, offset int) (*SsrcStream, uin
 	}
 	// record reception time
 	str.Lock()
-	str.statistics.lastRtcpPacketTime = time.Now().UnixNano()
+	now := time.Now().UnixNano()
+	str.statistics.lastRtcpPacketTime = now
+	str.lastPeerReportTime = now
 	str.Unlock()
 
 	return str, strIdx, existing

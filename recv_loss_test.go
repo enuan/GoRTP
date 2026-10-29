@@ -211,3 +211,27 @@ func TestReinitSeqResetsJitter(t *testing.T) {
 		t.Fatalf("jitter = %d after restart, spike from the old transit time baseline", got)
 	}
 }
+
+// TestReadRecvReportRecordsPeerReportTime checks that the reception of a
+// receiver report is timestamped: it is what tells "the peer reported no loss"
+// from "the peer never reported at all" (an output stream without reports has
+// zeroed counters that look perfect).
+func TestReadRecvReportRecordsPeerReportTime(t *testing.T) {
+	const (
+		startSeqNo = uint16(1000)
+		ssrc       = uint32(0x05060708)
+	)
+
+	own := &Address{IpAddr: net.ParseIP("127.0.0.1"), DataPort: 5000, CtrlPort: 5001}
+	str := newSsrcStreamOut(own, ssrc, startSeqNo)
+
+	if got := buildStreamStats(str).LastPeerReport; got != 0 {
+		t.Fatalf("LastPeerReport = %d before any report, want 0", got)
+	}
+
+	str.readRecvReport(buildRecvReport(ssrc, 0, uint32(startSeqNo)+99))
+
+	if got := buildStreamStats(str).LastPeerReport; got == 0 {
+		t.Fatal("LastPeerReport = 0 after a receiver report, want the reception time")
+	}
+}
